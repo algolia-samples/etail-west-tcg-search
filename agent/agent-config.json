@@ -43,6 +43,18 @@
   },
   "config": {
     "enableAlgoliaMcp": true,
-    "suggestions": { "enabled": true }
+    "suggestions": { "enabled": true },
+    "feedback": { "enabled": true },
+    "entryPoints": {
+      "searchBar": {
+        "aiModeEnabled": true,
+        "promptSuggestions": {
+          "sourceIndex": "tcg_cards_{{event_id}}"
+        }
+      }
+    },
+    "max_tokens": 0,
+    "max_iterations": 10,
+    "thread_depth": { "max_messages": 0 }
   }
 }
