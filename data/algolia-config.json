@@ -13,7 +13,9 @@
     "filterOnly(is_top_10_chase_card)",
     "filterOnly(is_classic_pokemon)",
     "is_full_art",
-    "searchable(set_name)"
+    "searchable(set_name)",
+    "estimated_value",
+    "machine_quantity"
   ],
   "numericAttributesForFiltering": [
     "estimated_value",
