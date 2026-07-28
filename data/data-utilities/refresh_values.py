@@ -6,9 +6,12 @@ This is an out-of-band step: run it on a copy of an event's XLSX BEFORE the
 normal ingest flow. It does not touch Algolia — it only rewrites values in the
 spreadsheet, so the standard setup_event.sh / ingest.py pipeline stays unchanged.
 
-For each in-machine card it resolves the TCGdex set + card (the same way
-ingest.py does), reads pricing.tcgplayer.<variant>.marketPrice (USD), and writes
-the refreshed value back. When a card was printed in multiple finishes
+For each in-machine card it resolves the TCGdex set + card by reusing ingest.py's
+set-resolution and card-number normalization, reads
+pricing.tcgplayer.<variant>.marketPrice (USD), and writes the refreshed value back.
+Unlike ingest.py, it does NOT auto-resolve a missing card Number from the Pokemon
+Name — rows without a usable Number are skipped and logged. When a card was
+printed in multiple finishes
 (normal / reverse-holofoil / holofoil), it picks the variant whose *current*
 price is closest to the sheet's *existing* value — using the original valuation
 as the finish selector, then refreshing the number to today's market.
@@ -36,8 +39,19 @@ import requests
 TCGDEX_BASE_URL = "https://api.tcgdex.net/v2/en"
 REQUIRED_COLUMNS = {"Pokemon Name", "Number", "# in Machine", "Card Type", "Estimated Value"}
 
+# Cell values ingest.py treats as missing — blanks plus the 'nan'/'---' sentinels (ingest.py:91).
+MISSING_CELL_VALUES = {"", "nan", "---"}
+
 
 # ── Parsing helpers (mirror ingest.py semantics) ────────────────────────────────
+
+def is_missing(raw) -> bool:
+    """True for blank cells and the sentinels ingest.py treats as missing ('nan', '---')."""
+    if raw is None:
+        return True
+    if isinstance(raw, float) and raw != raw:  # float NaN
+        return True
+    return str(raw).strip().lower() in MISSING_CELL_VALUES
 
 def extract_card_set_from_sheet_name(sheet_name: str) -> str:
     """Extract set name from a sheet tab (same rules as ingest.py)."""
@@ -48,18 +62,16 @@ def extract_card_set_from_sheet_name(sheet_name: str) -> str:
 
 
 def normalize_number(raw) -> str | None:
-    """Normalize a Number cell to a bare local id, e.g. 287.0 / '287/217' -> '287'."""
-    if raw is None:
+    """Normalize a Number cell to a bare local id, e.g. 287.0 / '287/217' -> '287'. Missing -> None."""
+    if is_missing(raw):
         return None
     s = str(int(raw)) if isinstance(raw, float) else str(raw).strip()
-    if not s or s.lower() == "nan":
-        return None
     return s.split("/")[0].strip()
 
 
 def parse_value(raw) -> float | None:
-    """Parse an existing Estimated Value — native float (XLSX) or '$20.60' (CSV)."""
-    if raw is None:
+    """Parse an existing Estimated Value — native float (XLSX) or '$20.60' (CSV). Missing -> None."""
+    if is_missing(raw):
         return None
     if isinstance(raw, (int, float)):
         return float(raw)
@@ -211,13 +223,13 @@ def refresh_workbook(path: Path, dry_run: bool, max_ratio: float) -> int:
 
         for r in range(2, ws.max_row + 1):
             name = ws.cell(row=r, column=name_c).value
-            if name is None or str(name).strip().lower() in ("", "nan"):
+            if is_missing(name):
                 continue
             name = str(name).strip()
 
             qty = ws.cell(row=r, column=qty_c).value
-            if qty is None or str(qty).strip() == "":
-                continue  # not in machine — ingest skips it, so do we
+            if is_missing(qty):
+                continue  # not in machine (blank/nan/---) — ingest skips it, so do we
 
             number = normalize_number(ws.cell(row=r, column=num_c).value)
             existing = parse_value(ws.cell(row=r, column=val_c).value)
