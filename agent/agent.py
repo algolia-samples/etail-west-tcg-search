@@ -76,6 +76,17 @@ def _render_config(event_id, event_name, booth):
     return config, instructions
 
 
+def _tools_payload(config, tool):
+    """Assemble the agent's tools array: the search tool first, followed by any
+    extra tools declared in agent-config.json (e.g. algolia_display_results).
+
+    Sending only [tool] would overwrite (delete) any additional tools already
+    registered on the live agent, so extra_tools must be reproduced from config.
+    """
+    extra = config.get("extra_tools") or []
+    return [tool, *extra]
+
+
 def cmd_create(args):
     if not APP_ID or not API_KEY:
         print("ERROR: Missing ALGOLIA_APP_ID or ALGOLIA_API_KEY in agent/.env", file=sys.stderr)
@@ -98,7 +109,7 @@ def cmd_create(args):
         print(f"\nAgent name: {config['name']}")
         print(f"Provider:   {config['provider']}")
         print(f"Model:      {config['model']}")
-        print(f"\nTool payload:\n{json.dumps(tool, indent=2)}")
+        print(f"\nTools payload:\n{json.dumps(_tools_payload(config, tool), indent=2)}")
         if config.get("config"):
             print(f"\nAgent config:\n{json.dumps(config['config'], indent=2)}")
         print(f"\n--- Rendered instructions ---\n{instructions}")
@@ -118,7 +129,7 @@ def cmd_create(args):
         "model": config["model"],
         "instructions": instructions,
         "status": "draft",
-        "tools": [tool],
+        "tools": _tools_payload(config, tool),
     }
     if config.get("config"):
         payload["config"] = config["config"]
@@ -195,7 +206,7 @@ def _update_event_agent(client, event, dry_run=False, publish=False):
         "model": config["model"],
         "instructions": instructions,
         "status": current.get("status", "draft"),
-        "tools": [tool],
+        "tools": _tools_payload(config, tool),
     }
     if config.get("config"):
         new_payload["config"] = config["config"]
