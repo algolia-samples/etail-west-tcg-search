@@ -43,7 +43,9 @@ def main():
                         help="Patch an existing event record (skips index creation)")
     args = parser.parse_args()
 
-    if not args.patch and (not args.event_name or not args.booth):
+    # Compared against None, not falsiness: "" is a valid booth for events that have
+    # no booth number assigned yet.
+    if not args.patch and (args.event_name is None or args.booth is None):
         parser.error("event_name and booth are required unless --patch is used")
 
     if not ALGOLIA_APP_ID or not ALGOLIA_API_KEY:

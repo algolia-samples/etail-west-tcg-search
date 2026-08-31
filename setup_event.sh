@@ -10,6 +10,10 @@
 # Usage:
 #   ./setup_event.sh <event_id> <event_name> <booth> [venue] [--no-activate]
 #
+# Pass "" for <booth> when no booth number has been assigned yet — the header and
+# the agent prompt then omit the booth entirely. Add it later with a partial update
+# to the tcg_events record plus: agent.py update <event_id> --publish
+#
 # Example:
 #   ./setup_event.sh etail-west-2026 "Etail West 2026" 701 "Long Beach Convention Center"
 #   ./setup_event.sh shoptalk-2026 "Shoptalk 2026" 314 --no-activate
@@ -29,7 +33,7 @@ if [ $# -lt 3 ]; then
   echo ""
   echo "  event_id      Slug used for index names and URLs, e.g. etail-west-2026"
   echo "  event_name    Human-readable name (quote it), e.g. \"Etail West 2026\""
-  echo "  booth         Booth number, e.g. 701"
+  echo "  booth         Booth number, e.g. 701 (pass \"\" if not yet assigned)"
   echo "  venue         (optional) Venue name, e.g. \"Long Beach Convention Center\""
   echo "  --no-activate Skip setting the event as active (step 6)"
   exit 1
@@ -73,7 +77,7 @@ echo "  TCG Event Setup"
 echo "========================================"
 echo "  Event ID   : $EVENT_ID"
 echo "  Event Name : $EVENT_NAME"
-echo "  Booth      : $BOOTH"
+echo "  Booth      : ${BOOTH:-(none yet)}"
 [ -n "$VENUE" ] && echo "  Venue      : $VENUE"
 echo "  Index      : tcg_cards_${EVENT_ID}"
 [ "$NO_ACTIVATE" = true ] && echo "  Activate   : skipped (--no-activate)"

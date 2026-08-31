@@ -128,6 +128,19 @@ describe('Search — ChatAgent DOM ordering', () => {
   });
 });
 
+describe('Search — event name header', () => {
+  test('renders the booth when the event has one', () => {
+    renderSearch({ event_id: 'test-event', name: 'eTail Boston 2026', booth: '308' });
+    expect(screen.getByText('eTail Boston 2026 (Booth 308)')).toBeInTheDocument();
+  });
+
+  test('omits the booth parenthetical entirely when booth is empty', () => {
+    renderSearch({ event_id: 'test-event', name: 'RetailClub AI Festival 2026', booth: '' });
+    expect(screen.getByText('RetailClub AI Festival 2026')).toBeInTheDocument();
+    expect(screen.queryByText(/Booth/)).not.toBeInTheDocument();
+  });
+});
+
 describe('Search — agentId derivation', () => {
   test('passes eventConfig.agent_id to ChatAgent when present', () => {
     useEvent.mockReturnValue({
