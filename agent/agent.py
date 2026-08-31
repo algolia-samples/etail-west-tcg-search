@@ -65,7 +65,14 @@ def _render_config(event_id, event_name, booth):
     instructions_path = AGENT_DIR / raw_config["instructions"]
     instructions_template = instructions_path.read_text()
 
-    variables = {"event_id": event_id, "event_name": event_name, "booth": booth}
+    # booth_phrase lets PROMPT.md omit the parenthetical entirely for events with no
+    # booth number yet; a populated booth renders the same sentence as before.
+    variables = {
+        "event_id": event_id,
+        "event_name": event_name,
+        "booth": booth,
+        "booth_phrase": f" (booth {booth})" if booth else "",
+    }
 
     # Render config JSON and instructions together so missing vars are caught in one pass
     config_json = json.dumps(raw_config)
@@ -99,7 +106,8 @@ def cmd_create(args):
     if event is None:
         print(f"ERROR: Event '{args.event_id}' not found in {EVENTS_INDEX}.", file=sys.stderr)
         sys.exit(1)
-    print(f"Event: {event.get('name')} (booth {event.get('booth')})")
+    booth_note = f" (booth {event.get('booth')})" if event.get("booth") else ""
+    print(f"Event: {event.get('name')}{booth_note}")
 
     config, instructions = _render_config(args.event_id, args.event_name, args.booth)
     tool = build_tool(config)
@@ -213,10 +221,6 @@ def _update_event_agent(client, event, dry_run=False, publish=False):
 
     if dry_run:
         changes = _diff(current, new_payload)
-        curr_config = current.get("config", {})
-        new_config = new_payload.get("config", {})
-        if curr_config != new_config:
-            changes.append(f"  config: {json.dumps(curr_config)} → {json.dumps(new_config)}")
         print(f"\n--- {event_id} ({agent_id}) ---")
         if changes:
             print("\n".join(changes))

@@ -11,6 +11,12 @@ export function getCardTypeColor(cardType) {
     'Ultra Rare': '#8e44ad',
     'Illustration Rare': '#e67e22',
     'Special Illustration Rare': '#c0392b',
+    // Base rarities (RetailClub AI Festival onward): a desaturated ramp so they read
+    // as lower-tier and don't compete with the chase-card colors above.
+    'Promo': '#d35400',
+    'Rare': '#5d6d7e',
+    'Uncommon': '#7f8c8d',
+    'Common': '#95a5a6',
   };
   return colors[cardType] || '#3B4CCA';
 }

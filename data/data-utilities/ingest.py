@@ -35,15 +35,32 @@ TCGDEX_BASE_URL = "https://api.tcgdex.net/v2/en"
 FILE_PATTERN = r"TCG Search Website - Raw List - (.+) \((\d+)\)\.csv"
 
 
+def normalize_pokemon_name(name) -> str:
+    """Normalize a card name for cross-sheet matching.
+
+    The chase tab and the set sheets are maintained by hand, so the same card can
+    differ by case, padding, or apostrophe style ("Ethan's" vs "Ethan’s").
+    """
+    if pd.isna(name):
+        return ""
+    text = str(name).replace("\u2019", "'").replace("\u02bc", "'")
+    return " ".join(text.lower().split())
+
+
 def parse_chase_tab(xl: pd.ExcelFile) -> tuple:
     """
     Find and parse the chase/summary tab in an XLSX file.
     Scans all sheets for one containing a 'top 10' section header —
     so this works regardless of tab name or position.
-    Cards in the 'top 10' section → top_10_numbers (also chase).
-    Cards in any other section → chase_numbers only.
-    Returns (top_10_numbers, chase_numbers) — sets of stripped card numbers,
+    Cards in the 'top 10' section → top_10_keys (also chase).
+    Cards in any other section → chase_keys only.
+
+    Returns (top_10_keys, chase_keys) — sets of (normalized_name, number) tuples,
     or two empty sets if no matching tab is found.
+
+    The key includes the name because the number alone is ambiguous: the set-size
+    denominator is stripped ("173/165" -> "173"), so Pikachu 173/165 and Drasna
+    173/191 collide and a 9-cent common inherits a chase flag.
     """
     required_columns = {'Pokemon Name', 'Number'}
 
@@ -65,8 +82,8 @@ def parse_chase_tab(xl: pd.ExcelFile) -> tuple:
 
         # Found the chase tab — parse it
         print(f"  Found chase tab: '{sheet_name}'")
-        top_10_numbers = set()
-        chase_numbers = set()
+        top_10_keys = set()
+        chase_keys = set()
         current_section = None
 
         for _, row in df.iterrows():
@@ -89,12 +106,13 @@ def parse_chase_tab(xl: pd.ExcelFile) -> tuple:
                 if '/' in num_str:
                     num_str = num_str.split('/')[0]
                 if num_str and num_str.lower() not in ('nan', '---'):
+                    key = (normalize_pokemon_name(name_val), num_str)
                     if current_section == 'top_10':
-                        top_10_numbers.add(num_str)
+                        top_10_keys.add(key)
                     else:
-                        chase_numbers.add(num_str)
+                        chase_keys.add(key)
 
-        return top_10_numbers, chase_numbers
+        return top_10_keys, chase_keys
 
     return set(), set()
 
@@ -499,7 +517,8 @@ def process_csv_file(file_path: Path, client: SearchClientSync, index_name: str,
 def process_xlsx_file(file_path: Path, client: SearchClientSync, index_name: str, enrich: bool = True):
     """
     Process a single XLSX file and upload records to Algolia.
-    Each sheet is treated as a separate card set. Sheets prefixed with (OLD) are skipped.
+    Each sheet is treated as a separate card set. Hidden sheets and sheets prefixed
+    with (OLD) are skipped.
     Hyperlinks on column A (Pokemon Name) are extracted to override TCGdex images.
     """
     print(f"\nProcessing XLSX: {file_path.name}")
@@ -511,12 +530,24 @@ def process_xlsx_file(file_path: Path, client: SearchClientSync, index_name: str
         print(f"  Error reading XLSX: {e}")
         return
 
-    top_10_numbers, chase_numbers = parse_chase_tab(xl)
-    print(f"  Chase tab: {len(top_10_numbers)} top-10 cards, {len(chase_numbers)} chase cards")
+    top_10_keys, chase_keys = parse_chase_tab(xl)
+    print(f"  Chase tab: {len(top_10_keys)} top-10 cards, {len(chase_keys)} chase cards")
+
+    # Chase-tab entries the overlay never matched. A card listed as chase but absent
+    # from every set sheet (or spelled differently there) silently loses its flag, so
+    # report it instead of leaving the Top 10 carousel quietly short.
+    matched_chase_keys = set()
 
     for sheet_name in xl.sheet_names:
         if sheet_name.strip().upper().startswith("(OLD)"):
             print(f"  Skipping sheet: {sheet_name}")
+            continue
+
+        # Hiding a tab is how the sheet owner says "not this event" — usually a set
+        # carried over from a previous event's copy of the workbook. Ingesting it
+        # anyway silently loads cards that are not in the machine.
+        if wb[sheet_name].sheet_state != "visible":
+            print(f"  Skipping sheet: {sheet_name} — hidden in the source workbook")
             continue
 
         set_name = extract_card_set_from_sheet_name(sheet_name)
@@ -667,16 +698,18 @@ def process_xlsx_file(file_path: Path, client: SearchClientSync, index_name: str
         # Overlay top-10 and chase flags from chase tab (detected by content, not position)
         overlay_count = 0
         for record in records:
-            num = record["number"]
-            if num in top_10_numbers:
+            key = (normalize_pokemon_name(record["pokemon_name"]), record["number"])
+            if key in top_10_keys:
                 record["is_top_10_chase_card"] = True
                 record["is_chase_card"] = True
+                matched_chase_keys.add(key)
                 overlay_count += 1
-            elif num in chase_numbers:
+            elif key in chase_keys:
                 record["is_chase_card"] = True
+                matched_chase_keys.add(key)
                 overlay_count += 1
         if overlay_count:
-            print(f"  Overlay: {overlay_count} records flagged from first tab")
+            print(f"  Overlay: {overlay_count} records flagged from chase tab")
 
         if records:
             print(f"  Uploading {len(records)} records to Algolia...")
@@ -687,6 +720,14 @@ def process_xlsx_file(file_path: Path, client: SearchClientSync, index_name: str
                 print(f"  ✗ Error uploading to Algolia: {e}")
         else:
             print(f"  ⚠ No valid records to upload")
+
+    unmatched = (top_10_keys | chase_keys) - matched_chase_keys
+    if unmatched:
+        print(f"\n  ⚠ {len(unmatched)} chase-tab card(s) matched no ingested record —")
+        print(f"    not in any set sheet, spelled differently there, or not in the machine:")
+        for name, num in sorted(unmatched):
+            tier = "top-10" if (name, num) in top_10_keys else "chase"
+            print(f"      #{num:>4}  {name}  ({tier})")
 
 
 def main():
