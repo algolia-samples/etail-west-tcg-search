@@ -517,7 +517,8 @@ def process_csv_file(file_path: Path, client: SearchClientSync, index_name: str,
 def process_xlsx_file(file_path: Path, client: SearchClientSync, index_name: str, enrich: bool = True):
     """
     Process a single XLSX file and upload records to Algolia.
-    Each sheet is treated as a separate card set. Sheets prefixed with (OLD) are skipped.
+    Each sheet is treated as a separate card set. Hidden sheets and sheets prefixed
+    with (OLD) are skipped.
     Hyperlinks on column A (Pokemon Name) are extracted to override TCGdex images.
     """
     print(f"\nProcessing XLSX: {file_path.name}")
@@ -540,6 +541,13 @@ def process_xlsx_file(file_path: Path, client: SearchClientSync, index_name: str
     for sheet_name in xl.sheet_names:
         if sheet_name.strip().upper().startswith("(OLD)"):
             print(f"  Skipping sheet: {sheet_name}")
+            continue
+
+        # Hiding a tab is how the sheet owner says "not this event" — usually a set
+        # carried over from a previous event's copy of the workbook. Ingesting it
+        # anyway silently loads cards that are not in the machine.
+        if wb[sheet_name].sheet_state != "visible":
+            print(f"  Skipping sheet: {sheet_name} — hidden in the source workbook")
             continue
 
         set_name = extract_card_set_from_sheet_name(sheet_name)
