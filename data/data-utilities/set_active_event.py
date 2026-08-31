@@ -45,7 +45,8 @@ def cmd_list(client):
         active = " (active)" if event.get("current") else ""
         name = event.get("name", "")
         booth = event.get("booth", "")
-        print(f"  {event['objectID']}{active}  —  {name}, Booth {booth}")
+        location = f", Booth {booth}" if booth else ""
+        print(f"  {event['objectID']}{active}  —  {name}{location}")
 
 
 def cmd_set(client, event_id):

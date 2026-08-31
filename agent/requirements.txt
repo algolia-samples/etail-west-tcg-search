@@ -1,2 +1,2 @@
 python-dotenv>=1.0.0,<2.0.0
-algolia-agent @ git+https://github.com/algolia-samples/algolia-agent-cli.git@v1.2.0
+algolia-agent @ git+https://github.com/algolia-samples/algolia-agent-cli.git@v1.3.0
