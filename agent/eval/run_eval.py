@@ -7,7 +7,7 @@ stochastic, so each case runs N times and passes on a rate rather than a single
 result — a case that passes 4 of 5 runs at pass_rate 0.8 is green.
 
 Usage:
-    python run_eval.py <event_id> [--runs N] [--case NAME] [--json OUT]
+    .venv/bin/python3 eval/run_eval.py <event_id> [--runs N] [--case NAME] [--json OUT]
 
     <event_id>   e.g. retailclub-ai-festival-2026
     --runs N     override every case's run count (use 1 for a quick smoke test)
@@ -26,7 +26,9 @@ import argparse
 import json
 import os
 import sys
+import uuid
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -52,6 +54,19 @@ BROWSER_HEADERS = {
 }
 
 
+def _get(url):
+    req = urllib.request.Request(
+        url,
+        headers={
+            "x-algolia-application-id": APP_ID,
+            "x-algolia-api-key": API_KEY,
+            **BROWSER_HEADERS,
+        },
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read())
+
+
 def _post(url, body):
     req = urllib.request.Request(
         url,
@@ -70,13 +85,25 @@ def _post(url, body):
 
 
 def resolve_agent_id(event_id):
-    """Look the agent up the same way the app does, so the eval can't drift from it."""
-    url = f"https://{APP_ID}-dsn.algolia.net/1/indexes/{EVENTS_INDEX}/query"
-    hits = _post(url, {"query": event_id, "hitsPerPage": 5}).get("hits", [])
-    for hit in hits:
-        if hit.get("event_id") == event_id:
-            return hit.get("agent_id")
-    raise SystemExit(f"ERROR: no agent found for event {event_id!r} in {EVENTS_INDEX}")
+    """Fetch the event record directly. event_id is the objectID, so this is an exact
+    lookup — a relevance-ranked query could rank the record you asked for out of view
+    and report it missing."""
+    url = (
+        f"https://{APP_ID}-dsn.algolia.net/1/indexes/{EVENTS_INDEX}/"
+        f"{urllib.parse.quote(event_id, safe='')}"
+    )
+    try:
+        record = _get(url)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            raise SystemExit(
+                f"ERROR: no event {event_id!r} in {EVENTS_INDEX}"
+            ) from exc
+        raise
+    agent_id = record.get("agent_id")
+    if not agent_id:
+        raise SystemExit(f"ERROR: event {event_id!r} has no agent_id")
+    return agent_id
 
 
 def complete(agent_id, query, run_index):
@@ -84,11 +111,14 @@ def complete(agent_id, query, run_index):
         f"https://{APP_ID}.algolia.net/agent-studio/1/agents/{agent_id}/completions"
         f"?compatibilityMode=ai-sdk-5&stream=false&cache=false"
     )
+    # A conversation id must be unique per request. Reusing one whose stored content
+    # differs returns 409 Conflict, which silently reds every case's first run.
+    token = uuid.uuid4().hex
     body = {
-        "id": f"eval-{run_index}",
+        "id": f"eval-{run_index}-{token}",
         "messages": [
             {
-                "id": f"eval-msg-{run_index}",
+                "id": f"eval-msg-{run_index}-{token}",
                 "role": "user",
                 "parts": [{"type": "text", "text": query}],
             }
