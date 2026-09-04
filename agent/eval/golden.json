@@ -1,0 +1,85 @@
+{
+  "_note": "Every case here is a bug that actually shipped. Each `regression` line names it so a failure is legible without archaeology. Behaviour is stochastic: cases run N times and pass on a rate, not a single result.",
+  "cases": [
+    {
+      "name": "single-turn-answer",
+      "query": "Do you have any Charizard cards?",
+      "regression": "The client fired a second completion per question, so the agent answered twice: the display tool's intro and carousel, then a prose restatement. A text part alongside a display call is the signature.",
+      "runs": 3,
+      "pass_rate": 1.0,
+      "expect": {
+        "must_display": true,
+        "max_text_parts": 0,
+        "max_search_calls": 3,
+        "no_error": true
+      }
+    },
+    {
+      "name": "two-group-split",
+      "query": "My kid likes grass but I like fighting types",
+      "regression": "maxGroups was pinned at 1, so two genuinely different answers were mashed into one group. Also guards the search budget being too tight for a two-part question.",
+      "runs": 3,
+      "pass_rate": 1.0,
+      "expect": {
+        "must_display": true,
+        "groups_between": [2, 3],
+        "max_search_calls": 3,
+        "max_total_cards": 8,
+        "no_error": true
+      }
+    },
+    {
+      "name": "fuzzy-no-exact-match",
+      "query": "I really want a card that looks like a puppy. Got anything like that?",
+      "regression": "Three failures in one query. It over-searched into MaxStepsPerCompletionError, so a correct answer got 'contact support' stacked under it; it discarded real canine cards to apologise in prose; and once it presented a Trainer card that merely keyword-matched 'dog'. Declining is a valid outcome here — showing junk is not.",
+      "runs": 5,
+      "pass_rate": 0.8,
+      "expect": {
+        "may_decline": true,
+        "min_cards_if_displayed": 2,
+        "max_search_calls": 5,
+        "forbidden_tools": ["algolia_search_for_facet_values"],
+        "no_error": true
+      }
+    },
+    {
+      "name": "broad-query-no-maxsteps",
+      "query": "Do you have any fish pokemon?",
+      "regression": "Broad category queries with no matching facet used to walk the catalogue set by set, exhausting the 25-iteration budget.",
+      "runs": 3,
+      "pass_rate": 1.0,
+      "expect": {
+        "may_decline": true,
+        "max_search_calls": 5,
+        "forbidden_tools": ["algolia_search_for_facet_values"],
+        "no_error": true
+      }
+    },
+    {
+      "name": "plain-text-fields",
+      "query": "What are your most valuable cards?",
+      "regression": "The display tool's intro/title/why are inserted as raw text, unlike assistant prose which is markdown-compiled. The agent followed the global 'bold card names' rule and customers saw literal **asterisks**.",
+      "runs": 3,
+      "pass_rate": 1.0,
+      "expect": {
+        "must_display": true,
+        "no_markdown_in_fields": true,
+        "max_total_cards": 8,
+        "no_error": true
+      }
+    },
+    {
+      "name": "conversational-no-search",
+      "query": "How do I get a card?",
+      "regression": "Guards the other direction: a question needing no inventory lookup should answer in prose without burning a search or emitting an empty carousel.",
+      "runs": 2,
+      "pass_rate": 1.0,
+      "expect": {
+        "must_display": false,
+        "max_search_calls": 0,
+        "min_text_parts": 1,
+        "no_error": true
+      }
+    }
+  ]
+}
