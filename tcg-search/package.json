@@ -19,11 +19,11 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.110.9",
     "algoliasearch": "^5.56.0",
-    "instantsearch.css": "^8.18.0",
+    "instantsearch.css": "^8.22.0",
     "prop-types": "^15.8.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-instantsearch": "^7.41.0",
+    "react-instantsearch": "^7.49.0",
     "react-router-dom": "^7.18.3",
     "search-insights": "^2.4.0"
   },

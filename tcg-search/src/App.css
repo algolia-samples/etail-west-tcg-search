@@ -2521,6 +2521,17 @@ article {
   right: calc(100% + var(--ais-chat-margin));
 }
 
+/* The maximized panel has no measure of its own — both .ais-ChatMessages-content
+   and .ais-ChatPrompt are width:100% — so prose ran ~200 characters per line and
+   a carousel sat in a quarter of the width with dead space beside it. Cap both to
+   a readable column and centre them. Only bites when maximized; the default panel
+   width is already a sensible measure. */
+.ais-ChatSidePanelLayout--maximized .ais-ChatMessages-content,
+.ais-ChatSidePanelLayout--maximized .ais-ChatPrompt {
+  max-width: 62rem;
+  margin-inline: auto;
+}
+
 .carousel-hit-image-wrapper {
   width: 100%;
   display: flex;
