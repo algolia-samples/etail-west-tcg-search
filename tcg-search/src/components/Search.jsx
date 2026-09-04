@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
 import { useLocation } from 'react-router-dom';
 import { searchClient, getIndexNames, userToken, chatAgentId } from '../utilities/algolia';
@@ -14,7 +14,6 @@ import {
   SortBy,
   useClearRefinements,
   useHits,
-  useInstantSearch,
   useSearchBox,
   useSortBy,
 } from 'react-instantsearch';
@@ -65,17 +64,16 @@ function SearchBoxWithAISubmit() {
   );
 }
 
-function ClearButton({ defaultSort, sortItems, chatFilters, clearChatFilters }) {
+function ClearButton({ defaultSort, sortItems }) {
   const { refine: clearRefinements, canRefine } = useClearRefinements();
   const { currentRefinement: currentSort, refine: setSort } = useSortBy({ items: sortItems });
   const sortChanged = currentSort !== defaultSort;
 
-  if (!canRefine && !sortChanged && !chatFilters) return null;
+  if (!canRefine && !sortChanged) return null;
 
   function handleClear() {
     clearRefinements();
     if (sortChanged) setSort(defaultSort);
-    if (chatFilters) clearChatFilters();
   }
 
   return (
@@ -91,8 +89,6 @@ ClearButton.propTypes = {
   sortItems: PropTypes.arrayOf(
     PropTypes.shape({ label: PropTypes.string, value: PropTypes.string })
   ).isRequired,
-  chatFilters: PropTypes.string,
-  clearChatFilters: PropTypes.func,
 };
 
 function HitsWithNoResults() {
@@ -121,69 +117,23 @@ function HitsWithNoResults() {
   );
 }
 
-// Reads the last completed search tool call from chat messages and extracts
-// facet_* fields (e.g. facet_pokemon_types, facet_is_full_art) into a raw
-// Algolia filters string. The library's applyFilters only handles query and
-// facet_filters, not these custom MCP tool fields.
-function ChatViewAllHandler({ onFiltersChange }) {
-  const { indexRenderState } = useInstantSearch();
-  const stateRef = useRef(indexRenderState);
-
-  useEffect(() => {
-    stateRef.current = indexRenderState;
-  }, [indexRenderState]);
-
+// The chat carousel's "View all" button applies the agent's filters itself:
+// react-instantsearch reads them from the search tool's `queries[0]`, and
+// prefers the server's resolved search params where those are present. All
+// this has to add is bringing the search box into view.
+function ChatViewAllScroll() {
   useEffect(() => {
     const handleViewAll = (e) => {
       if (!e.target.closest('.ais-ChatToolSearchIndexCarouselHeaderViewAll')) return;
-
       scrollToSearchBox();
-
-      const messages = stateRef.current?.chat?.messages ?? [];
-      let toolInput = null;
-      outer: for (let i = messages.length - 1; i >= 0; i--) {
-        const msg = messages[i];
-        if (msg.role !== 'assistant') continue;
-        for (const part of (msg.parts ?? [])) {
-          if (
-            part.type?.startsWith('tool-algolia_search_index') &&
-            part.state === 'output-available' &&
-            part.input
-          ) {
-            toolInput = part.input;
-            break outer;
-          }
-        }
-      }
-
-      const filterParts = [];
-      if (toolInput) {
-        for (const [key, value] of Object.entries(toolInput)) {
-          if (!key.startsWith('facet_')) continue;
-          const attribute = key.slice(6);
-          if (Array.isArray(value)) {
-            value.forEach((v) => filterParts.push(`${attribute}:"${v}"`));
-          } else if (typeof value === 'boolean') {
-            filterParts.push(`${attribute}:${value}`);
-          } else if (value != null) {
-            filterParts.push(`${attribute}:"${value}"`);
-          }
-        }
-      }
-
-      onFiltersChange(filterParts.join(' AND '));
     };
 
     document.addEventListener('click', handleViewAll);
     return () => document.removeEventListener('click', handleViewAll);
-  }, [onFiltersChange]);
+  }, []);
 
   return null;
 }
-
-ChatViewAllHandler.propTypes = {
-  onFiltersChange: PropTypes.func.isRequired,
-};
 
 export default function Search() {
   const { eventConfig, loading, error } = useEvent();
@@ -191,7 +141,6 @@ export default function Search() {
   // Capture in useState — location.state is wiped by InstantSearch's routing on mount
   const [searchQuery] = useState(location.state?.searchQuery ?? '');
   const [shouldScrollToSearch] = useState(location.state?.scrollToSearch ?? false);
-  const [chatFilters, setChatFilters] = useState('');
 
   useEffect(() => {
     if (!shouldScrollToSearch) return;
@@ -242,7 +191,6 @@ export default function Search() {
           <Configure
             hitsPerPage={12}
             clickAnalytics={true}
-            filters={chatFilters || undefined}
           />
           {searchQuery && <ScanQuerySetter query={searchQuery} />}
 
@@ -271,13 +219,13 @@ export default function Search() {
               <FilterDropdown attribute="set_name" placeholder="All Sets" />
               <FilterToggle attribute="is_chase_card" label="Chase Cards" shortLabel="Chase" />
               <SortBy items={sortItems} />
-              <ClearButton defaultSort={priceDesc} sortItems={sortItems} chatFilters={chatFilters} clearChatFilters={() => setChatFilters('')} />
+              <ClearButton defaultSort={priceDesc} sortItems={sortItems} />
             </div>
           </div>
 
           {/* AI Chat Agent */}
           <ChatAgent agentId={agentId} />
-          <ChatViewAllHandler onFiltersChange={setChatFilters} />
+          <ChatViewAllScroll />
 
           <div className="search-panel">
             <div className="search-panel__results">

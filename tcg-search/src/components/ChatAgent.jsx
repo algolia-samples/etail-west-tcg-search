@@ -1,10 +1,5 @@
 import PropTypes from 'prop-types';
-import {
-  Chat,
-  ChatSidePanelLayout,
-  createDefaultTools,
-  DisplayResultsToolType,
-} from 'react-instantsearch';
+import { Chat, ChatSidePanelLayout } from 'react-instantsearch';
 import 'instantsearch.css/components/chat.css';
 import ChatItemComponent from './ChatItemComponent';
 
@@ -15,46 +10,6 @@ const PROMPT_SUGGESTIONS = [
   "What's your best water type card?",
   'How do I get a card?',
 ];
-
-// The Display Results tool payload ({ intro, groups: [{ results: [{ objectID }] }] })
-// has shipped in two server contracts: historically it arrived on the tool *output*,
-// but the current live agent delivers it on the tool-call *input*. The default
-// react-instantsearch renderer only reads `output`, so it renders nothing against the
-// current contract. We wrap the default renderer and hand it whichever side actually
-// carries the payload — preferring `output`, so this keeps working once the server
-// release that moves the payload back to `output` lands. (Per InstantSearch team.)
-const defaultTools = createDefaultTools(ChatItemComponent);
-const defaultDisplayResults = defaultTools[DisplayResultsToolType];
-const DefaultDisplayResultsLayout = defaultDisplayResults.layoutComponent;
-
-function hasDisplayPayload(value) {
-  return (
-    Boolean(value) &&
-    (Array.isArray(value.groups) || typeof value.intro === 'string')
-  );
-}
-
-function resolveDisplayPayload(message) {
-  if (hasDisplayPayload(message?.output)) return message.output;
-  if (hasDisplayPayload(message?.input)) return message.input;
-  return message?.output;
-}
-
-function DisplayResultsLayout({ message, ...rest }) {
-  const normalizedMessage = { ...message, output: resolveDisplayPayload(message) };
-  return <DefaultDisplayResultsLayout message={normalizedMessage} {...rest} />;
-}
-
-DisplayResultsLayout.propTypes = {
-  message: PropTypes.object,
-};
-
-const chatTools = {
-  [DisplayResultsToolType]: {
-    ...defaultDisplayResults,
-    layoutComponent: DisplayResultsLayout,
-  },
-};
 
 function ChatGreeting({ sendMessage }) {
   return (
@@ -88,7 +43,10 @@ export default function ChatAgent({ agentId }) {
       layoutComponent={ChatSidePanelLayout}
       itemComponent={ChatItemComponent}
       emptyComponent={ChatGreeting}
-      tools={chatTools}
+      // These kiosks are shared: several people use one screen in sequence. The
+      // library persists messages and open state to sessionStorage by default,
+      // which would reopen the panel replaying the previous visitor's chat.
+      persistence={false}
       feedback
     />
   );
