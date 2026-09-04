@@ -22,7 +22,7 @@
       "type": "algolia_display_results",
       "isTerminal": true,
       "minGroups": 1,
-      "maxGroups": 1,
+      "maxGroups": 3,
       "minResultsPerGroup": 1,
       "maxResultsPerGroup": 5,
       "v2": null
