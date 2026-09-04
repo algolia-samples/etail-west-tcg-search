@@ -25,6 +25,7 @@ rather than the agent.
 import argparse
 import json
 import os
+import re
 import sys
 import uuid
 import urllib.error
@@ -171,7 +172,17 @@ def observe(response):
     return obs
 
 
-MARKDOWN_TOKENS = ("**", "__", "`")
+# The prompt forbids markdown in the display tool's fields, so this has to cover
+# every form it forbids — bold, italics and code, in both asterisk and underscore
+# spellings. Matching paired delimiters with non-space content rather than a bare
+# "*" keeps a lone asterisk in card text from reading as a false positive.
+MARKDOWN_PATTERNS = (
+    ("bold", re.compile(r"\*\*[^*\n]+\*\*")),
+    ("bold", re.compile(r"__[^_\n]+__")),
+    ("italics", re.compile(r"(?<!\*)\*[^*\s][^*\n]*\*(?!\*)")),
+    ("italics", re.compile(r"(?<!_)_[^_\s][^_\n]*_(?!_)")),
+    ("code", re.compile(r"`[^`\n]+`")),
+)
 
 
 def check(expect, obs):
@@ -205,8 +216,13 @@ def check(expect, obs):
             fails.append(f"called forbidden tool {tool}")
     if expect.get("no_markdown_in_fields"):
         for field in obs["fields"]:
-            if any(tok in field for tok in MARKDOWN_TOKENS):
-                fails.append(f"markdown in a display field: {field[:60]!r}")
+            hit = next(((k, p) for k, p in MARKDOWN_PATTERNS if p.search(field)), None)
+            if hit:
+                kind, pattern = hit
+                fails.append(
+                    f"{kind} markdown in a display field: "
+                    f"{pattern.search(field).group(0)!r} in {field[:60]!r}"
+                )
                 break
     if expect.get("no_error") and obs["error"]:
         fails.append(f"turn errored: {obs['error']}")
@@ -220,6 +236,9 @@ def main():
     ap.add_argument("--case", help="run a single case by name")
     ap.add_argument("--json", dest="json_out", help="write full per-run detail here")
     args = ap.parse_args()
+
+    if args.runs is not None and args.runs < 1:
+        raise SystemExit("ERROR: --runs must be 1 or more")
 
     if not APP_ID or not API_KEY:
         raise SystemExit(f"ERROR: set ALGOLIA_APP_ID and an API key in {ENV}")
